@@ -113,6 +113,9 @@ services:
     build:
       context: ../gym-study-front
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:5000}
     container_name: gym-study-frontend
     restart: unless-stopped
     environment:
