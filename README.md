@@ -1,114 +1,125 @@
-# GYM-STUDY Infrastructure
+<h1 align="center">
+  Gym Study · Infra
+</h1>
 
-Docker Compose configuration for running the complete GYM-STUDY stack.
+<p align="center">
+  <img src="docs/arch.gif" alt="Arquitetura do Gym Study: navegador, front Next.js, API Express, PostgreSQL, Redis, MinIO e serviços externos" />
+</p>
 
-## Services
+<p align="center">
+  <a href="https://skillicons.dev">
+    <img src="https://skillicons.dev/icons?i=docker,postgres,redis,nodejs,nextjs" alt="Stacks" />
+  </a>
+</p>
 
-- **PostgreSQL** (port 5432): Database
-- **Redis** (port 6379): Cache and sessions
-- **Backend** (port 5000): Node.js/Express API
-- **Frontend** (port 3000): Next.js application
+## Qual a finalidade do projeto?
 
-## Quick Start
+Sobe a stack inteira do **Gym Study**, a plataforma de estudos gamificada, com um único `docker compose up`: web app, API, banco, cache e filas, e armazenamento de arquivos.
 
-1. Copy the environment file:
-```bash
-cp .env.example .env
+As imagens do front e do back são construídas a partir dos repositórios vizinhos ([gym-study-front](https://github.com/gym-study-org/gym-study-front) e [gym-study-back](https://github.com/gym-study-org/gym-study-back)), então os três precisam estar clonados lado a lado.
+
+## O que foi construído
+
+### Serviços
+
+| Serviço | Imagem | Porta | Função |
+|---|---|---|---|
+| `frontend` | build de `../gym-study-front` | 3000 | Web app Next.js |
+| `backend` | build de `../gym-study-back` | 5000 | API Express + Socket.io, aplica as migrations ao subir |
+| `postgres` | `postgres:16-alpine` | 5432 | Banco de dados |
+| `redis` | `redis:7-alpine` | 6379 | Cache, filas BullMQ e pub/sub do Socket.io |
+| `minio` | `cgr.dev/chainguard/minio` | 9000 / 9001 | Avatares (API S3) e console web |
+
+Todos os serviços têm healthcheck, e o `backend` só sobe depois que banco, Redis e MinIO estão saudáveis.
+
+### Arquivos
+
+| Arquivo | Uso |
+|---|---|
+| `docker-compose.yml` | Stack em modo produção |
+| `docker-compose.dev.yml` | Override com hot reload (monta o `src` dos repositórios) |
+| `.env.example` | Variáveis de ambiente (JWT, banco, SMTP, OAuth, URLs) |
+| `docker/postgres/init.sql` | Script executado na criação do banco |
+
+### Volumes
+
+`postgres_data`, `redis_data`, `minio_data` e `backend_logs`, todos na rede `gym-study-network`.
+
+## Tecnologias utilizadas
+
+- **Docker Compose:** orquestração local dos cinco serviços;
+- **PostgreSQL 16:** banco relacional;
+- **Redis 7:** cache e filas;
+- **MinIO:** armazenamento compatível com S3;
+- **Node.js 20 e Next.js 14:** imagens do back e do front.
+
+## Estrutura do repositório
+
+```text
+gym-study-infra/
+├── docker/postgres/init.sql
+├── docs/arch.gif              # Diagrama da arquitetura
+├── docker-compose.yml
+├── docker-compose.dev.yml
+├── .env.example
+└── README.md
 ```
 
-2. Edit `.env` and set your JWT_SECRET (must be at least 32 characters):
-```bash
-JWT_SECRET=your_super_secret_key_change_in_production_min_32_chars_here
-```
+## Fluxo de funcionamento
 
-3. Start all services:
-```bash
-docker-compose up -d
-```
+1. `docker compose up` sobe PostgreSQL, Redis e MinIO e espera o healthcheck de cada um.
+2. O `backend` aplica as migrations no banco, cria o bucket no MinIO e começa a atender em `:5000`.
+3. O `frontend` sobe em `:3000`, já compilado com a URL da API.
+4. No navegador, o front chama a API por REST e WebSocket.
+5. A API grava no PostgreSQL, usa o Redis para cache e filas, e guarda os avatares no MinIO.
 
-4. Run database migrations:
-```bash
-docker exec gym-study-backend npm run migration:run
-```
-
-5. Check logs:
-```bash
-docker-compose logs -f
-```
-
-6. Access the application:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:5000
-- API Health: http://localhost:5000/health
-
-## Development Mode
-
-To run in development mode with hot reload:
+## Como rodar
 
 ```bash
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+git clone https://github.com/gym-study-org/gym-study-front
+git clone https://github.com/gym-study-org/gym-study-back
+git clone https://github.com/gym-study-org/gym-study-infra
+cd gym-study-infra
+
+cp .env.example .env            # troque o JWT_SECRET (mínimo 32 caracteres)
+docker compose up -d --build
+node ../gym-study-back/scripts/seed-demo.mjs   # dados de exemplo (opcional)
 ```
 
-## Useful Commands
+| Endereço | O quê |
+|---|---|
+| http://localhost:3000 | Web app (login `ana@gymstudy.dev` / `Demo1234` depois do seed) |
+| http://localhost:5000/docs | Swagger UI da API |
+| http://localhost:9001 | Console do MinIO |
+
+Modo desenvolvimento, com hot reload:
 
 ```bash
-# Start services
-docker-compose up -d
-
-# Stop services
-docker-compose down
-
-# Stop and remove volumes (CAUTION: deletes database)
-docker-compose down -v
-
-# View logs
-docker-compose logs -f
-
-# View specific service logs
-docker-compose logs -f backend
-
-# Rebuild services
-docker-compose build
-
-# Access PostgreSQL
-docker exec -it gym-study-postgres psql -U postgres -d gym_study
-
-# Access Redis CLI
-docker exec -it gym-study-redis redis-cli
-
-# Run migrations
-docker exec gym-study-backend npm run migration:run
-
-# Access backend shell
-docker exec -it gym-study-backend sh
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
-## Environment Variables
+Para apagar tudo, inclusive os dados: `docker compose down -v`.
 
-See `.env.example` for all available environment variables.
+## Como validar a entrega
 
-### Required Variables
-- `JWT_SECRET`: JWT secret key (min 32 chars)
-- `DB_PASSWORD`: PostgreSQL password
+Em uma validação end-to-end, a stack deve subir do zero, com o banco vazio, e o front deve conseguir cadastrar um usuário e registrar uma sessão de estudo.
 
-### Optional Variables
-- OAuth credentials (Google, GitHub)
-- SMTP settings (for email)
-- Rate limiting settings
+Pontos principais de validação:
 
-## Ports
+- `docker compose ps` com os cinco serviços `healthy`;
+- logs do `backend` mostrando as 29 migrations aplicadas e o bucket `gym-study` criado;
+- `GET http://localhost:5000/health` respondendo `200`;
+- front abrindo em `:3000` e chamando a API em `:5000`;
+- cadastro, login e registro de sessão funcionando pelo navegador.
 
-- 3000: Frontend
-- 5000: Backend API
-- 5432: PostgreSQL
-- 6379: Redis
+## Projeto Gym Study
 
-## Volumes
+| Repositório | Camada |
+|---|---|
+| [gym-study-front](https://github.com/gym-study-org/gym-study-front) | Web app (Next.js) |
+| [gym-study-back](https://github.com/gym-study-org/gym-study-back) | API (Express + PostgreSQL + Redis) |
+| **gym-study-infra** | Stack completa com Docker Compose |
 
-- `postgres_data`: PostgreSQL data
-- `redis_data`: Redis data
-- `backend_logs`: Backend application logs
+## Autor
 
-## Networks
-
-All services run on the `gym-study-network` bridge network.
+**William Alves Coelho** · [@willtechdev](https://github.com/willtechdev)
